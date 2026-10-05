@@ -182,7 +182,9 @@ var VIEW_TO_DATA = {
 };
 
 /** 色 */
-var C_WINE = '#7b1e3a';
+var C_WINE = '#7b1e3a';        // 文字色用（薄い背景に載せるので濃いまま）
+var C_HEAD_BG = '#9c5a6b';     // 見出し行の背景（くすんだローズ）
+var C_HEAD_TEXT_ON_BG = '#ffffff'; // 見出しの文字色。コントラスト 5.14:1（WCAG AA 合格）
 var C_WINE_SOFT = '#f3e6ea';
 var C_HEAD_TEXT = '#ffffff';
 var C_GRAY = '#e0dcde';   // 価格帯グループ区切りのグレー行
@@ -238,7 +240,7 @@ function ensureDataSheet_(ss) {
     sh.insertColumnsAfter(sh.getMaxColumns(), HEADERS.length - sh.getMaxColumns());
   }
   sh.getRange(1, 1, 1, HEADERS.length).setValues([HEADERS])
-    .setFontWeight('bold').setBackground(C_WINE).setFontColor(C_HEAD_TEXT);
+    .setFontWeight('bold').setBackground(C_HEAD_BG).setFontColor(C_HEAD_TEXT_ON_BG);
   sh.setFrozenRows(1);
   if (sh.getMaxColumns() > HEADERS.length) {
     sh.deleteColumns(HEADERS.length + 1, sh.getMaxColumns() - HEADERS.length);
@@ -410,7 +412,7 @@ function renderInventoryView_(ss) {
     pushRow(hRow, styleRow(C_WINE_SOFT, 'bold', C_WINE, 12));
 
     // 列見出し
-    pushRow(VIEW_HEADERS.slice(), styleRow(C_WINE, 'bold', C_HEAD_TEXT, 10));
+    pushRow(VIEW_HEADERS.slice(), styleRow(C_HEAD_BG, 'bold', C_HEAD_TEXT_ON_BG, 10));
 
     var prevBand = null, started = false, bandStart = -1;
     var greyCells = []; // 各価格帯の小計セル（Total がこれを足す）
@@ -543,9 +545,9 @@ function refreshReport_(ss) {
   sh.getRange('A3').setValue("L'occas").setFontWeight('bold').setFontSize(12);
   sh.getRange('F3').setValue('La Cave').setFontWeight('bold').setFontSize(12).setFontColor(C_WINE);
   sh.getRange(4, 1, 1, 4).setValues([HED]).setFontWeight('bold')
-    .setBackground(C_WINE).setFontColor(C_HEAD_TEXT).setHorizontalAlignment('center');
+    .setBackground(C_HEAD_BG).setFontColor(C_HEAD_TEXT_ON_BG).setHorizontalAlignment('center');
   sh.getRange(4, 6, 1, 4).setValues([HED]).setFontWeight('bold')
-    .setBackground(C_WINE).setFontColor(C_HEAD_TEXT).setHorizontalAlignment('center');
+    .setBackground(C_HEAD_BG).setFontColor(C_HEAD_TEXT_ON_BG).setHorizontalAlignment('center');
 
   if (firstTime) buildLoccasTemplate_(sh);
   buildLaCave_(sh, ss);
@@ -671,7 +673,7 @@ function writeMasterSheet_(ss) {
   var sh = ss.getSheetByName(MASTER_SHEET) || ss.insertSheet(MASTER_SHEET, ss.getNumSheets());
 
   sh.getRange(1, 1, 1, MASTER_HEADERS.length).setValues([MASTER_HEADERS])
-    .setFontWeight('bold').setBackground(C_WINE).setFontColor(C_HEAD_TEXT);
+    .setFontWeight('bold').setBackground(C_HEAD_BG).setFontColor(C_HEAD_TEXT_ON_BG);
   sh.setFrozenRows(1);
   if (sh.getMaxColumns() > MASTER_HEADERS.length) {
     sh.deleteColumns(MASTER_HEADERS.length + 1, sh.getMaxColumns() - MASTER_HEADERS.length);
