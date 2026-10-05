@@ -1,0 +1,403 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<base target="_top">
+<style>
+  :root{
+    color-scheme: light;
+    --bg:#f4f1f2; --card:#fff; --field:#fff; --ink:#22181c; --muted:#8a7c82;
+    --line:#e5dde0; --wine:#7b1e3a; --wine-soft:#f6ebef; --ok:#1f7a4d; --ng:#b3261e;
+    --radius:12px;
+  }
+  *{box-sizing:border-box;}
+  body{margin:0;background:var(--bg);color:var(--ink);
+    font-family:"Helvetica Neue","Hiragino Sans","Yu Gothic UI",Meiryo,sans-serif;
+    font-size:15px;line-height:1.6;}
+  .wrap{max-width:760px;margin:0 auto;padding:18px 16px 72px;}
+  header{margin-bottom:14px;}
+  h1{font-size:20px;margin:0 0 4px;letter-spacing:.02em;}
+  h1 .mark{color:var(--wine);}
+  .sub{color:var(--muted);font-size:13px;margin:0;}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);
+    padding:16px;margin-bottom:14px;}
+
+  label{display:block;font-size:13px;font-weight:600;margin-bottom:6px;}
+  .field{margin-bottom:14px;}
+  .field:last-child{margin-bottom:0;}
+  input,textarea,select{width:100%;padding:10px 12px;font-size:16px;font-family:inherit;
+    color:var(--ink);background:var(--field);border:1px solid var(--line);border-radius:8px;outline:none;}
+  input::placeholder,textarea::placeholder{color:#b3a7ac;}
+  input:focus,textarea:focus,select:focus{border-color:var(--wine);box-shadow:0 0 0 3px var(--wine-soft);}
+  textarea{resize:vertical;min-height:58px;}
+  .row{display:flex;gap:12px;flex-wrap:wrap;}
+  .row>.field{flex:1 1 150px;margin-bottom:14px;}
+
+  .shelves{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;}
+  .shelf{position:relative;border:1px solid var(--line);border-radius:8px;padding:10px 8px;
+    text-align:center;cursor:pointer;background:#fbfafa;transition:border-color .12s,background .12s;}
+  .shelf:hover{border-color:#c9b7bf;}
+  .shelf input{position:absolute;opacity:0;pointer-events:none;}
+  .shelf .code{display:block;font-weight:700;font-size:15px;}
+  .shelf .type{display:block;font-size:11px;color:var(--muted);}
+  .shelf.on{border-color:var(--wine);background:var(--wine-soft);}
+  .shelf.on .code,.shelf.on .type{color:var(--wine);}
+
+  .inline{display:flex;gap:8px;align-items:center;}
+  .inline input{flex:1;}
+  .mini{white-space:nowrap;padding:8px 12px;font-size:13px;font-weight:600;font-family:inherit;
+    color:var(--wine);background:var(--wine-soft);border:1px solid var(--line);border-radius:8px;cursor:pointer;}
+  .mini:hover{filter:brightness(1.03);}
+
+  button.submit{width:100%;padding:14px;font-size:16px;font-weight:700;font-family:inherit;
+    color:#fff;background:var(--wine);border:none;border-radius:8px;cursor:pointer;margin-top:14px;}
+  button.submit:hover:not(:disabled){filter:brightness(1.1);}
+  button.submit:disabled{opacity:.55;cursor:progress;}
+
+  .msg{border-radius:8px;padding:12px 14px;margin-bottom:12px;font-size:14px;white-space:pre-line;display:none;}
+  .msg.show{display:block;}
+  .msg.ok{background:rgba(31,122,77,.12);color:var(--ok);border:1px solid rgba(31,122,77,.35);}
+  .msg.ng{background:rgba(179,38,30,.10);color:var(--ng);border:1px solid rgba(179,38,30,.35);}
+
+  .editbar{display:none;justify-content:space-between;align-items:center;gap:10px;
+    background:#fff7e6;border:1px solid #f0d9a8;border-radius:8px;padding:10px 12px;margin-bottom:12px;font-size:13px;}
+  .editbar.show{display:flex;}
+  .editbar b{color:#8a5a00;}
+
+  .search input{width:100%;}
+  .results{margin-top:10px;max-height:280px;overflow:auto;border-top:1px solid var(--line);}
+  .results:empty{display:none;}
+  .hit{display:flex;gap:10px;align-items:baseline;padding:9px 4px;border-bottom:1px solid var(--line);
+    cursor:pointer;font-size:13px;}
+  .hit:hover{background:var(--wine-soft);}
+  .badge{background:var(--wine-soft);color:var(--wine);border-radius:5px;padding:1px 7px;
+    font-size:11px;font-weight:700;white-space:nowrap;}
+  .hit .nm{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  .hit .meta{color:var(--muted);font-size:12px;white-space:nowrap;}
+  .empty{color:var(--muted);font-size:13px;padding:8px 0;}
+  h2{font-size:13px;color:var(--muted);margin:0 0 8px;font-weight:600;}
+  footer{text-align:center;font-size:13px;}
+  footer a{color:var(--wine);}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header>
+    <h1>ワイン在庫入力（La Cave）</h1>
+    <p class="sub">全項目 任意入力です。既存ワインの本数を数え直すときは、上の検索から選んで更新してください。</p>
+  </header>
+
+  <div id="msg" class="msg"></div>
+
+  <!-- 既存ワインを探して更新（DBにあるボトルはここから） -->
+  <div class="card search">
+    <h2>既存ワインを探して更新</h2>
+    <input type="text" id="q" placeholder="生産者・Cuvée・カテゴリで検索（例: Piconnet / 白 / Champagne）">
+    <div class="results" id="results"></div>
+  </div>
+
+  <!-- 編集中バナー -->
+  <div class="editbar" id="editbar">
+    <span>✎ <b id="editLabel"></b> を更新中</span>
+    <button type="button" class="mini" id="newBtn">新規入力に戻る</button>
+  </div>
+
+  <form id="form" class="card" autocomplete="off">
+    <input type="hidden" id="id">
+
+    <div class="field">
+      <label>棚</label>
+      <div class="shelves" id="shelves"></div>
+    </div>
+
+    <div class="field">
+      <label for="category">カテゴリ</label>
+      <select id="category"></select>
+    </div>
+
+    <div class="row">
+      <div class="field">
+        <label for="band">価格帯（店内・外税/本）</label>
+        <input type="number" id="band" min="0" step="100" inputmode="numeric" placeholder="例: 16000">
+      </div>
+      <div class="field">
+        <label for="retail">小売値（円/本）</label>
+        <input type="number" id="retail" min="0" step="100" inputmode="numeric" placeholder="持ち帰り価格">
+      </div>
+      <div class="field" style="flex:0 0 110px">
+        <label for="glass">グラス番号</label>
+        <input type="number" id="glass" min="1" max="9" step="1" inputmode="numeric" placeholder="1〜9">
+      </div>
+    </div>
+
+    <div class="row">
+      <div class="field">
+        <label for="buyDate">仕入れ日</label>
+        <input type="text" id="buyDate" placeholder="例: 2026.4">
+      </div>
+      <div class="field">
+        <label for="buyPrice">仕入れ値（円/本）</label>
+        <input type="number" id="buyPrice" min="0" step="1" inputmode="numeric" placeholder="例: 5030">
+      </div>
+    </div>
+
+    <div class="field">
+      <label for="area">エリア</label>
+      <input type="text" id="area" list="dl-areas" placeholder="例: Champagne / Bourgogne / Loire">
+      <datalist id="dl-areas"></datalist>
+    </div>
+
+    <div class="row">
+      <div class="field">
+        <label for="producer">生産者</label>
+        <input type="text" id="producer" list="dl-producers" placeholder="例: Piconnet（ピコネ）">
+        <datalist id="dl-producers"></datalist>
+      </div>
+      <div class="field">
+        <label for="cuvee">Cuvée</label>
+        <input type="text" id="cuvee" list="dl-cuvees" placeholder="例: Montmirel Blanc de Noirs（…）">
+        <datalist id="dl-cuvees"></datalist>
+      </div>
+    </div>
+
+    <div class="row">
+      <div class="field">
+        <label for="vintage">ヴィンテージ</label>
+        <div class="inline">
+          <input type="text" id="vintage" placeholder="例: 2021 / NV">
+          <button type="button" class="mini" id="nvBtn">NV</button>
+        </div>
+      </div>
+      <div class="field">
+        <label for="qty">在庫数（本）</label>
+        <div class="inline">
+          <button type="button" class="mini" data-step="-1">−</button>
+          <input type="number" id="qty" value="1" min="0" step="1" inputmode="numeric">
+          <button type="button" class="mini" data-step="1">＋</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="field">
+      <label for="grape">品種</label>
+      <input type="text" id="grape" list="dl-grapes" placeholder="例: ピノノワール、シャルドネ">
+      <datalist id="dl-grapes"></datalist>
+    </div>
+
+    <div class="field">
+      <label for="note">備考</label>
+      <textarea id="note" placeholder="Deg.年、寝かせる、頂き物、等"></textarea>
+    </div>
+
+    <button type="submit" class="submit" id="submit">登録する</button>
+  </form>
+
+  <footer><a id="sheetLink" href="#" target="_blank" rel="noopener">スプレッドシートを開く</a></footer>
+</div>
+
+<script>
+  var SHELVES = [];
+  var WINES = [];
+
+  /* ---------- 初期化 ---------- */
+  google.script.run
+    .withSuccessHandler(onInit)
+    .withFailureHandler(function(e){ showMsg('ng','読み込みに失敗しました。\n'+e.message); })
+    .getInitialData();
+
+  function onInit(data){
+    SHELVES = data.shelves || [];
+    WINES = data.wines || [];
+    renderShelves(SHELVES);
+    fillSuggestions(data.suggestions || {});
+    document.getElementById('sheetLink').href = data.sheetUrl || '#';
+    renderResults('');
+  }
+
+  /* ---------- 棚 → カテゴリ ---------- */
+  function renderShelves(shelves){
+    var box = document.getElementById('shelves');
+    box.innerHTML = '';
+    shelves.forEach(function(s,i){
+      var lb = document.createElement('label');
+      lb.className = 'shelf';
+      lb.innerHTML =
+        '<input type="radio" name="shelf" value="'+esc(s.code)+'"'+(i===0?' checked':'')+'>'+
+        '<span class="code">'+esc(s.code)+'</span>'+
+        '<span class="type">'+esc(s.note||'')+'</span>';
+      box.appendChild(lb);
+    });
+    box.addEventListener('change', function(){ paintShelves(); rebuildCategories(); });
+    paintShelves();
+    rebuildCategories();
+  }
+  function paintShelves(){
+    document.querySelectorAll('#shelves .shelf').forEach(function(l){
+      l.classList.toggle('on', l.querySelector('input').checked);
+    });
+  }
+  function selectedShelf(){
+    var el = document.querySelector('input[name="shelf"]:checked');
+    return el ? el.value : '';
+  }
+  function shelfDef(code){
+    for (var i=0;i<SHELVES.length;i++) if (SHELVES[i].code===code) return SHELVES[i];
+    return null;
+  }
+  function rebuildCategories(keep){
+    var sel = document.getElementById('category');
+    var def = shelfDef(selectedShelf());
+    var cur = keep || sel.value;
+    sel.innerHTML = '';
+    ((def&&def.categories)||[]).forEach(function(c){
+      var o = document.createElement('option'); o.value=c; o.textContent=c; sel.appendChild(o);
+    });
+    if (cur){
+      for (var i=0;i<sel.options.length;i++) if (sel.options[i].value===cur){ sel.value=cur; break; }
+    }
+  }
+
+  /* ---------- 入力候補（datalist：その欄だけを補完） ---------- */
+  function fillSuggestions(s){
+    setOptions('dl-areas', s.areas);
+    setOptions('dl-producers', s.producers);
+    setOptions('dl-cuvees', s.cuvees);
+    setOptions('dl-grapes', s.grapes);
+  }
+  function setOptions(id,list){
+    var dl = document.getElementById(id); if(!dl) return;
+    dl.innerHTML='';
+    (list||[]).forEach(function(v){ var o=document.createElement('option'); o.value=v; dl.appendChild(o); });
+  }
+
+  /* ---------- 数量 +/- と NV ---------- */
+  document.querySelectorAll('[data-step]').forEach(function(b){
+    b.addEventListener('click', function(){
+      var el = document.getElementById('qty');
+      var v = (Number(el.value)||0) + Number(b.getAttribute('data-step'));
+      if (v<0) v=0; el.value=v;
+    });
+  });
+  document.getElementById('nvBtn').addEventListener('click', function(){
+    document.getElementById('vintage').value='NV';
+  });
+
+  /* ---------- 検索（既存ワインを探して更新） ---------- */
+  document.getElementById('q').addEventListener('input', function(){ renderResults(this.value); });
+  function renderResults(q){
+    var box = document.getElementById('results');
+    q = (q||'').trim().toLowerCase();
+    var list = WINES;
+    if (q){
+      list = WINES.filter(function(w){
+        return [w.producer,w.cuvee,w.category,w.area,w.shelf].join(' ').toLowerCase().indexOf(q)>=0;
+      });
+    }
+    list = list.slice(0, 40);
+    if (!WINES.length){ box.innerHTML = '<p class="empty">まだ登録がありません。下のフォームから追加してください。</p>'; return; }
+    if (!list.length){ box.innerHTML = '<p class="empty">一致するワインがありません。</p>'; return; }
+    var html = '';
+    list.forEach(function(w){
+      var nm = w.producer || w.cuvee || '(名称なし)';
+      var second = (w.producer && w.cuvee) ? ' <span class="meta">/ '+esc(w.cuvee)+'</span>' : '';
+      html += '<div class="hit" data-id="'+w.id+'">'+
+        '<span class="badge">'+esc(w.shelf)+' '+esc(w.category)+'</span>'+
+        '<span class="nm">'+esc(nm)+second+'</span>'+
+        '<span class="meta">'+ (w.vintage?esc(w.vintage)+' · ':'') + esc(w.qty)+'本</span>'+
+        '</div>';
+    });
+    box.innerHTML = html;
+    box.querySelectorAll('.hit').forEach(function(el){
+      el.addEventListener('click', function(){ loadWine(Number(el.getAttribute('data-id'))); });
+    });
+  }
+
+  function loadWine(id){
+    var w=null; for (var i=0;i<WINES.length;i++) if (WINES[i].id===id) w=WINES[i];
+    if (!w) return;
+    var radios = document.querySelectorAll('input[name="shelf"]');
+    radios.forEach(function(r){ r.checked = (r.value===w.shelf); });
+    paintShelves(); rebuildCategories(w.category);
+    setV('id', w.id); setV('band', w.band); setV('retail', w.retail);
+    setV('buyDate', w.buyDate); setV('buyPrice', w.buyPrice); setV('area', w.area);
+    setV('producer', w.producer); setV('cuvee', w.cuvee); setV('vintage', w.vintage);
+    setV('grape', w.grape); setV('note', w.note); setV('qty', w.qty);
+    setV('glass', w.glass);
+    var label = (w.producer||w.cuvee||w.category||'（無題）');
+    document.getElementById('editLabel').textContent = [w.shelf,w.category,label].filter(Boolean).join(' / ');
+    document.getElementById('editbar').classList.add('show');
+    document.getElementById('submit').textContent = '更新する';
+    window.scrollTo({top:0,behavior:'smooth'});
+  }
+
+  document.getElementById('newBtn').addEventListener('click', clearForm);
+  function clearForm(){
+    setV('id',''); setV('band',''); setV('retail',''); setV('buyDate',''); setV('buyPrice','');
+    setV('area',''); setV('producer',''); setV('cuvee',''); setV('vintage',''); setV('grape','');
+    setV('note',''); setV('qty',1); setV('glass','');
+    document.getElementById('editbar').classList.remove('show');
+    document.getElementById('submit').textContent = '登録する';
+  }
+
+  /* ---------- 送信 ---------- */
+  document.getElementById('form').addEventListener('submit', function(ev){
+    ev.preventDefault();
+    var btn = document.getElementById('submit');
+    var payload = {
+      id: val('id'), shelf: selectedShelf(), category: val('category'),
+      band: val('band'), retail: val('retail'), buyDate: val('buyDate'),
+      buyPrice: val('buyPrice'), area: val('area'), producer: val('producer'),
+      cuvee: val('cuvee'), vintage: val('vintage'), grape: val('grape'),
+      note: val('note'), qty: val('qty'), glass: val('glass')
+    };
+    var local = quickCheck(payload);
+    if (local){ showMsg('ng', local); return; }
+
+    btn.disabled = true; var wasUpdate = !!payload.id;
+    btn.textContent = wasUpdate ? '更新中…' : '登録中…';
+    hideMsg();
+
+    google.script.run
+      .withSuccessHandler(function(res){
+        btn.disabled=false;
+        WINES = res.wines || WINES;
+        fillSuggestions(res.suggestions || {});
+        showMsg('ok', '✓ '+res.message);
+        clearForm();
+        renderResults(document.getElementById('q').value);
+        window.scrollTo({top:0,behavior:'smooth'});
+      })
+      .withFailureHandler(function(e){
+        btn.disabled=false;
+        btn.textContent = wasUpdate ? '更新する' : '登録する';
+        showMsg('ng', e.message);
+      })
+      .saveWine(payload);
+  });
+
+  /* 全項目 任意。ただし識別情報が何も無い登録だけ止める */
+  function quickCheck(p){
+    if(!p.producer && !p.cuvee && !p.category && !p.area && p.band===''){
+      return '生産者・Cuvée・カテゴリ・エリア・価格帯のいずれか1つは入力してください。';
+    }
+    if (p.glass !== '' && !/^[1-9]$/.test(p.glass)) {
+      return 'グラス番号は 1〜9 の数字で入力してください。';
+    }
+    return '';
+  }
+
+  /* ---------- ユーティリティ ---------- */
+  function val(id){ return document.getElementById(id).value.trim(); }
+  function setV(id,v){ document.getElementById(id).value = (v===null||v===undefined)?'':v; }
+  function showMsg(t,x){ var m=document.getElementById('msg'); m.className='msg show '+t; m.textContent=x; }
+  function hideMsg(){ document.getElementById('msg').className='msg'; }
+  function esc(s){
+    return String(s===null||s===undefined?'':s)
+      .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+      .replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+  }
+</script>
+</body>
+</html>

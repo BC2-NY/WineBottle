@@ -1,0 +1,7 @@
+# 実運用データを含む資料のため、リポジトリには含めない
+*.pdf
+
+# OS / エディタ
+Thumbs.db
+.DS_Store
+.vscode/
