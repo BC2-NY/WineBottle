@@ -155,6 +155,12 @@ var VIEW_ID_COL = VIEW_NCOL + 1; // 13
 /** Cave在庫表 の明細が始まる行（1行目=タイトル, 2行目=空白） */
 var VIEW_TOP = 3;
 
+/** 各ブロック末尾に置く「新規追加行」の案内文と、隠し列に入れる目印 */
+var ADD_HINT = '＋ 新規はこの行に入力';
+var ADD_MARK = 'NEW:';          // 隠し列が NEW:<棚>\u0000<カテゴリ> なら新規追加行
+var C_ADD_BG = '#fbf6f7';       // 新規追加行の背景（ごく淡い）
+var C_ADD_TEXT = '#a9959c';     // 案内文の色
+
 /** 在庫数の列記号。小計・Total の数式を組み立てるのに使う */
 var QTY_COL_LETTER = colLetter_(VIEW_NCOL); // 'L'
 
@@ -395,7 +401,7 @@ function renderInventoryView_(ss) {
   function blank_() { var a = []; for (var i = 0; i < VIEW_NCOL; i++) a.push(''); return a; }
 
   /** 1ブロックぶんを出力する。入力順に関係なく価格帯順へ並べ直す。 */
-  function emitSection_(title, items) {
+  function emitSection_(title, items, shelf, cat) {
     if (!items.length) return;
 
     // 並び替え：価格帯昇順（空欄は最後）→ 小売値昇順 → 生産者
@@ -455,6 +461,12 @@ function renderInventoryView_(ss) {
     t[VIEW_NCOL - 1] = greyCells.length ? '=SUM(' + greyCells.join(',') + ')' : 0;
     pushRow(t, styleRow(C_WINE_SOFT, 'bold', C_WINE, 10));
 
+    // 新規追加行。ここに入力すると、この棚×カテゴリの新しい1本として 在庫データ に追加される。
+    var a = blank_();
+    a[0] = ADD_HINT;
+    pushRow(a, styleRow(C_ADD_BG, 'normal', C_ADD_TEXT, 10),
+            ADD_MARK + shelf + '\u0000' + cat);
+
     // セクション間の空白2行
     pushRow(blank_(), styleRow('#ffffff', 'normal', '#000000', 10));
     pushRow(blank_(), styleRow('#ffffff', 'normal', '#000000', 10));
@@ -466,7 +478,7 @@ function renderInventoryView_(ss) {
     sec.cats.forEach(function (c) { used[sec.shelf + '\u0000' + c] = true; });
     emitSection_(sec.title, data.filter(function (w) {
       return w.shelf === sec.shelf && sec.cats.indexOf(w.category) !== -1;
-    }));
+    }), sec.shelf, sec.cats[0]); // 複数カテゴリをまとめたブロックでは先頭を既定にする
   });
 
   // --- SECTIONS に無い棚×カテゴリも末尾にまとめて出し、取りこぼしを防ぐ ---
@@ -479,7 +491,7 @@ function renderInventoryView_(ss) {
   });
   leftoverKeys.forEach(function (k) {
     var p = k.split('\u0000');
-    emitSection_(((p[0] ? p[0] + ' ' : '') + p[1]).trim() || '（未分類）', leftovers[k]);
+    emitSection_(((p[0] ? p[0] + ' ' : '') + p[1]).trim() || '（未分類）', leftovers[k], p[0], p[1]);
   });
 
   if (vals.length) {
@@ -965,7 +977,15 @@ function handleViewEdit_(e) {
     var touched = 0;
 
     for (var i = 0; i < nR; i++) {
-      var id = Number(ids[i][0]);
+      var idRaw = String(ids[i][0] === null || ids[i][0] === undefined ? '' : ids[i][0]).trim();
+
+      // 新規追加行に入力された → 在庫データ に1行足す
+      if (idRaw.indexOf(ADD_MARK) === 0) {
+        if (appendFromViewRow_(data, idRaw, targets, vals[i], now)) touched++;
+        continue;
+      }
+
+      var id = Number(idRaw);
       if (!id || id < 2 || id > lastDataRow) continue; // 見出し・グレー行・Total行
 
       for (var ri = 0; ri < runs.length; ri++) {
@@ -983,6 +1003,38 @@ function handleViewEdit_(e) {
   } catch (err) {
     console.error('handleViewEdit_: ' + err);
   }
+}
+
+/**
+ * Cave在庫表 の「新規追加行」に入力された内容から、在庫データ へ1行追加する。
+ * 棚とカテゴリは隠し列の目印（NEW:<棚>\u0000<カテゴリ>）から取る。
+ * 中身が空（案内文だけ）の場合は何もしない。追加できたら true。
+ */
+function appendFromViewRow_(data, idRaw, targets, rowVals, now) {
+  var parts = idRaw.slice(ADD_MARK.length).split('\u0000');
+  var shelf = parts[0] || '';
+  var cat   = parts[1] || '';
+
+  var filled = {}, hasValue = false;
+  for (var t = 0; t < targets.length; t++) {
+    var raw = rowVals[targets[t].vj];
+    if (String(raw === null || raw === undefined ? '' : raw).trim() === ADD_HINT) continue; // 案内文は無視
+    var v = normalizeForData_(targets[t].dcol, raw);
+    if (v === '' || v === null) continue;
+    filled[targets[t].dcol] = v;
+    hasValue = true;
+  }
+  if (!hasValue) return false;
+
+  var row = [];
+  for (var c = 0; c < HEADERS.length; c++) row.push('');
+  row[COL.TIMESTAMP - 1] = now;
+  row[COL.SHELF - 1] = shelf;
+  row[COL.CATEGORY - 1] = cat;
+  for (var dc in filled) row[Number(dc) - 1] = filled[dc];
+
+  data.appendRow(row);
+  return true;
 }
 
 /** 在庫データの列に合わせて値を整える（数値列は数値に、それ以外は文字列に） */
