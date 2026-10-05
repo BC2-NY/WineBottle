@@ -155,12 +155,6 @@ var VIEW_ID_COL = VIEW_NCOL + 1; // 13
 /** Cave在庫表 の明細が始まる行（1行目=タイトル, 2行目=空白） */
 var VIEW_TOP = 3;
 
-/** 各ブロック末尾に置く「新規追加行」の案内文と、隠し列に入れる目印 */
-var ADD_HINT = '＋ 新規はこの行に入力';
-var ADD_MARK = 'NEW:';          // 隠し列が NEW:<棚>\u0000<カテゴリ> なら新規追加行
-var C_ADD_BG = '#fbf6f7';       // 新規追加行の背景（ごく淡い）
-var C_ADD_TEXT = '#a9959c';     // 案内文の色
-
 /** 在庫数の列記号。小計・Total の数式を組み立てるのに使う */
 var QTY_COL_LETTER = colLetter_(VIEW_NCOL); // 'L'
 
@@ -259,6 +253,27 @@ function ensureDataSheet_(ss) {
   sh.getRange(2, COL.QTY, n, 1).setNumberFormat('0');
   sh.getRange(2, COL.GLASS, n, 1).setNumberFormat('0');
 
+  // --- 新規ボトルはこのシートに直接打つので、打ちやすく整える ---
+
+  // 棚のプルダウン
+  var shelfCodes = SHELVES.map(function (s) { return s.code; });
+  sh.getRange(2, COL.SHELF, n, 1).setDataValidation(
+    SpreadsheetApp.newDataValidation().requireValueInList(shelfCodes, true)
+      .setAllowInvalid(false)
+      .setHelpText('棚を選んでください：' + shelfCodes.join(' / ')).build());
+
+  // カテゴリのプルダウン（棚を選ぶと、その棚のものだけに絞り込まれます）
+  sh.getRange(2, COL.CATEGORY, n, 1).setDataValidation(
+    SpreadsheetApp.newDataValidation().requireValueInList(allCategories_(), true)
+      .setAllowInvalid(false)
+      .setHelpText('カテゴリを選んでください。先に棚を選ぶと候補が絞り込まれます。').build());
+
+  // 列幅
+  var dw = [130, 70, 120, 95, 95, 95, 95, 120, 170, 200, 95, 170, 200, 70, 70];
+  for (var i = 0; i < dw.length && i < HEADERS.length; i++) sh.setColumnWidth(i + 1, dw[i]);
+  sh.getRange(2, COL.NOTE, n, 1).setWrap(true);
+  sh.getRange(2, COL.GRAPE, n, 1).setWrap(true);
+
   // 旧フラット Cave在庫表 からの移行（在庫データを新規作成したときだけ）
   if (!existed) {
     var old = ss.getSheetByName(INV_SHEET);
@@ -269,8 +284,28 @@ function ensureDataSheet_(ss) {
       if (keep.length) sh.getRange(2, 1, keep.length, HEADERS.length).setValues(keep);
     }
   }
-  sh.hideSheet();
+  sh.showSheet(); // 新規ボトルの入力場所なので常時表示する
   return sh;
+}
+
+/** 全カテゴリ（棚をまたいだ重複なしの一覧） */
+function allCategories_() {
+  var seen = {}, out = [];
+  SHELVES.forEach(function (s) {
+    s.categories.forEach(function (c) {
+      if (seen[c]) return;
+      seen[c] = true; out.push(c);
+    });
+  });
+  return out;
+}
+
+/** 指定した棚で使えるカテゴリ */
+function categoriesForShelf_(shelfCode) {
+  for (var i = 0; i < SHELVES.length; i++) {
+    if (SHELVES[i].code === shelfCode) return SHELVES[i].categories.slice();
+  }
+  return allCategories_();
 }
 
 /** 既定の空シート（シート1/Sheet1）が残っていれば削除 */
@@ -401,7 +436,7 @@ function renderInventoryView_(ss) {
   function blank_() { var a = []; for (var i = 0; i < VIEW_NCOL; i++) a.push(''); return a; }
 
   /** 1ブロックぶんを出力する。入力順に関係なく価格帯順へ並べ直す。 */
-  function emitSection_(title, items, shelf, cat) {
+  function emitSection_(title, items) {
     if (!items.length) return;
 
     // 並び替え：価格帯昇順（空欄は最後）→ 小売値昇順 → 生産者
@@ -461,12 +496,6 @@ function renderInventoryView_(ss) {
     t[VIEW_NCOL - 1] = greyCells.length ? '=SUM(' + greyCells.join(',') + ')' : 0;
     pushRow(t, styleRow(C_WINE_SOFT, 'bold', C_WINE, 10));
 
-    // 新規追加行。ここに入力すると、この棚×カテゴリの新しい1本として 在庫データ に追加される。
-    var a = blank_();
-    a[0] = ADD_HINT;
-    pushRow(a, styleRow(C_ADD_BG, 'normal', C_ADD_TEXT, 10),
-            ADD_MARK + shelf + '\u0000' + cat);
-
     // セクション間の空白2行
     pushRow(blank_(), styleRow('#ffffff', 'normal', '#000000', 10));
     pushRow(blank_(), styleRow('#ffffff', 'normal', '#000000', 10));
@@ -478,7 +507,7 @@ function renderInventoryView_(ss) {
     sec.cats.forEach(function (c) { used[sec.shelf + '\u0000' + c] = true; });
     emitSection_(sec.title, data.filter(function (w) {
       return w.shelf === sec.shelf && sec.cats.indexOf(w.category) !== -1;
-    }), sec.shelf, sec.cats[0]); // 複数カテゴリをまとめたブロックでは先頭を既定にする
+    }));
   });
 
   // --- SECTIONS に無い棚×カテゴリも末尾にまとめて出し、取りこぼしを防ぐ ---
@@ -491,7 +520,7 @@ function renderInventoryView_(ss) {
   });
   leftoverKeys.forEach(function (k) {
     var p = k.split('\u0000');
-    emitSection_(((p[0] ? p[0] + ' ' : '') + p[1]).trim() || '（未分類）', leftovers[k], p[0], p[1]);
+    emitSection_(((p[0] ? p[0] + ' ' : '') + p[1]).trim() || '（未分類）', leftovers[k]);
   });
 
   if (vals.length) {
@@ -891,8 +920,15 @@ function showWebAppUrl() {
  *  連続して直したときは締め切りが後ろへずれ、再計算は1回だけ走る。
  * ================================================================== */
 
-/** 監視する列 */
-var WATCH_COLS = [COL.BAND, COL.RETAIL, COL.BUY_PRICE, COL.QTY];
+/**
+ * 在庫データ で再計算のきっかけになる列。
+ * 新規ボトルもこのシートに直接打つため、更新日時(自動)以外の全項目を見る。
+ */
+var WATCH_COLS = (function () {
+  var a = [];
+  for (var c = 2; c <= HEADERS.length; c++) a.push(c);
+  return a;
+})();
 
 /** 最後の編集から待つ時間（ミリ秒） */
 var DEBOUNCE_MS = 10000;
@@ -930,10 +966,58 @@ function handleDataEdit_(e) {
     }
     if (!hit) return;
 
+    stampEditedRows_(e.range);
+    narrowCategoryChoices_(e);
     scheduleRecalc_();
   } catch (err) {
     console.error('handleDataEdit_: ' + err);
   }
+}
+
+/** 編集された行の「更新日時」が空なら今の時刻を入れる（手打ちで足した行のため） */
+function stampEditedRows_(range) {
+  var sh = range.getSheet();
+  var r1 = range.getRow(), nR = range.getNumRows();
+  if (r1 < 2) { nR -= (2 - r1); r1 = 2; }
+  if (nR < 1) return;
+
+  var cells = sh.getRange(r1, COL.TIMESTAMP, nR, 1);
+  var cur = cells.getValues();
+  var now = new Date(), changed = false;
+  for (var i = 0; i < cur.length; i++) {
+    if (cur[i][0] === '' || cur[i][0] === null) { cur[i][0] = now; changed = true; }
+  }
+  if (changed) cells.setValues(cur);
+}
+
+/**
+ * 在庫データ で棚を選んだら、その行のカテゴリ候補をその棚のものだけに絞る。
+ * 選択済みのカテゴリがその棚に無い場合は消して選び直してもらう。
+ */
+function narrowCategoryChoices_(e) {
+  var c1 = e.range.getColumn();
+  if (COL.SHELF < c1 || COL.SHELF > c1 + e.range.getNumColumns() - 1) return; // 棚を触っていない
+
+  var sh = e.range.getSheet();
+  var r1 = Math.max(e.range.getRow(), 2);
+  var nR = e.range.getRow() + e.range.getNumRows() - r1;
+  if (nR < 1) return;
+
+  var shelves = sh.getRange(r1, COL.SHELF, nR, 1).getValues();
+  var catCells = sh.getRange(r1, COL.CATEGORY, nR, 1);
+  var cats = catCells.getValues();
+  var touched = false;
+
+  for (var i = 0; i < nR; i++) {
+    var list = categoriesForShelf_(String(shelves[i][0] || '').trim());
+    sh.getRange(r1 + i, COL.CATEGORY).setDataValidation(
+      SpreadsheetApp.newDataValidation().requireValueInList(list, true)
+        .setAllowInvalid(false).build());
+    if (cats[i][0] !== '' && list.indexOf(String(cats[i][0]).trim()) === -1) {
+      cats[i][0] = ''; touched = true;   // 棚に合わないカテゴリは外す
+    }
+  }
+  if (touched) catCells.setValues(cats);
 }
 
 /**
@@ -979,12 +1063,6 @@ function handleViewEdit_(e) {
     for (var i = 0; i < nR; i++) {
       var idRaw = String(ids[i][0] === null || ids[i][0] === undefined ? '' : ids[i][0]).trim();
 
-      // 新規追加行に入力された → 在庫データ に1行足す
-      if (idRaw.indexOf(ADD_MARK) === 0) {
-        if (appendFromViewRow_(data, idRaw, targets, vals[i], now)) touched++;
-        continue;
-      }
-
       var id = Number(idRaw);
       if (!id || id < 2 || id > lastDataRow) continue; // 見出し・グレー行・Total行
 
@@ -1003,38 +1081,6 @@ function handleViewEdit_(e) {
   } catch (err) {
     console.error('handleViewEdit_: ' + err);
   }
-}
-
-/**
- * Cave在庫表 の「新規追加行」に入力された内容から、在庫データ へ1行追加する。
- * 棚とカテゴリは隠し列の目印（NEW:<棚>\u0000<カテゴリ>）から取る。
- * 中身が空（案内文だけ）の場合は何もしない。追加できたら true。
- */
-function appendFromViewRow_(data, idRaw, targets, rowVals, now) {
-  var parts = idRaw.slice(ADD_MARK.length).split('\u0000');
-  var shelf = parts[0] || '';
-  var cat   = parts[1] || '';
-
-  var filled = {}, hasValue = false;
-  for (var t = 0; t < targets.length; t++) {
-    var raw = rowVals[targets[t].vj];
-    if (String(raw === null || raw === undefined ? '' : raw).trim() === ADD_HINT) continue; // 案内文は無視
-    var v = normalizeForData_(targets[t].dcol, raw);
-    if (v === '' || v === null) continue;
-    filled[targets[t].dcol] = v;
-    hasValue = true;
-  }
-  if (!hasValue) return false;
-
-  var row = [];
-  for (var c = 0; c < HEADERS.length; c++) row.push('');
-  row[COL.TIMESTAMP - 1] = now;
-  row[COL.SHELF - 1] = shelf;
-  row[COL.CATEGORY - 1] = cat;
-  for (var dc in filled) row[Number(dc) - 1] = filled[dc];
-
-  data.appendRow(row);
-  return true;
 }
 
 /** 在庫データの列に合わせて値を整える（数値列は数値に、それ以外は文字列に） */
